@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'chat_page.dart';
-import 'chat_sessions_page.dart'; // Import the new ChatSessionsPage
+import 'chat_sessions_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -12,8 +12,85 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _tokens = 5;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadTokens();
+  }
+
+  Future<void> _loadTokens() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _tokens = prefs.getInt('tokens') ??
+          5; // Load tokens, defaulting to 5 if not found
+    });
+  }
+
+  Future<void> _saveTokens(int tokens) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('tokens', tokens); // Save tokens to shared_preferences
+  }
+
+  Future<void> _showMockAd() async {
+    // Simulate an ad experience with a simple dialog
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Watch this ad to earn 1 token'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Simulate an ad with a progress indicator
+              Container(
+                height: 150,
+                color: Colors.grey[300],
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Ad Placeholder'),
+                      SizedBox(height: 20),
+                      CircularProgressIndicator(),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 20),
+              Text('Please wait...'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _tokens += 1; // Reward the user with one token
+                  _saveTokens(_tokens);
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('You earned 1 token!')),
+                );
+              },
+              child: Text('Close Ad'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _startChat() async {
     final sessionId = Uuid().v4();
+    final prefs = await SharedPreferences.getInstance();
+    List<String> sessions = prefs.getStringList('chat_sessions') ?? [];
+
+    // Add the new session and keep only the most recent 5
+    sessions.add(sessionId);
+    if (sessions.length > 5) {
+      sessions = sessions.sublist(sessions.length - 5);
+    }
+    await prefs.setStringList('chat_sessions', sessions);
 
     final result = await Navigator.push(
       context,
@@ -26,17 +103,13 @@ class _HomePageState extends State<HomePage> {
     if (result != null && result is int) {
       setState(() {
         _tokens = result;
+        _saveTokens(_tokens); // Save the updated token count
       });
     }
   }
 
   void _getMoreTokens() {
-    setState(() {
-      _tokens += 5;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added More Tokens')),
-    );
+    _showMockAd(); // Show the mock ad dialog
   }
 
   void _viewChatSessions() {
@@ -51,27 +124,21 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black87,
-      appBar: AppBar(
-        title: Text('Techy Home Page'),
-        backgroundColor: Colors.blueGrey[900],
-        elevation: 0,
-      ),
+      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
           // Background image
           Container(
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: AssetImage(
-                    'assets/background.jpg'), // Add a background image
+                image: AssetImage('assets/background.jpg'),
                 fit: BoxFit.cover,
               ),
             ),
           ),
           Container(
-            color: Colors.black87
-                .withOpacity(0.7), // Overlay with semi-transparent color
+            color:
+                Colors.black.withOpacity(0.5), // Add a semi-transparent overlay
           ),
           Center(
             child: Padding(
@@ -89,47 +156,11 @@ class _HomePageState extends State<HomePage> {
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: 30),
-                  ElevatedButton(
-                    onPressed: _startChat,
-                    style: ElevatedButton.styleFrom(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      textStyle: TextStyle(fontSize: 18),
-                      backgroundColor: Colors.blueAccent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    child: Text('Start New Chat'),
-                  ),
+                  _buildCustomButton('Start New Chat', _startChat),
                   SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: _getMoreTokens,
-                    style: ElevatedButton.styleFrom(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      textStyle: TextStyle(fontSize: 18),
-                      backgroundColor: Colors.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    child: Text('Get More Tokens'),
-                  ),
+                  _buildCustomButton('Get More Tokens', _getMoreTokens),
                   SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: _viewChatSessions,
-                    style: ElevatedButton.styleFrom(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      textStyle: TextStyle(fontSize: 18),
-                      backgroundColor: Color(0xff3c26e1),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    child: Text('View Chat Sessions'),
-                  ),
+                  _buildCustomButton('View Chat Sessions', _viewChatSessions),
                   SizedBox(height: 40),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -155,6 +186,49 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCustomButton(String text, VoidCallback onPressed) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.blueAccent.withOpacity(0.7),
+            Colors.blueGrey.withOpacity(0.7)
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black45,
+            offset: Offset(2, 2),
+            blurRadius: 5,
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30),
+          ),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 18,
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }

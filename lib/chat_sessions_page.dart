@@ -18,8 +18,17 @@ class _ChatSessionsPageState extends State<ChatSessionsPage> {
 
   Future<void> _loadChatSessions() async {
     final prefs = await SharedPreferences.getInstance();
+    List<String> sessions = prefs.getStringList('chat_sessions') ?? [];
+
+    // Keep only the most recent 5 sessions
+    if (sessions.length > 5) {
+      sessions = sessions.sublist(sessions.length - 5);
+      await prefs.setStringList(
+          'chat_sessions', sessions); // Save the trimmed list back
+    }
+
     setState(() {
-      _chatSessions = prefs.getStringList('chat_sessions') ?? [];
+      _chatSessions = sessions;
     });
   }
 
@@ -36,7 +45,7 @@ class _ChatSessionsPageState extends State<ChatSessionsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Chat Sessions'),
+        title: Text('Up to 5 Recent Sessions'),
         backgroundColor: Colors.blueGrey[900],
       ),
       body: _chatSessions.isEmpty
@@ -51,22 +60,27 @@ class _ChatSessionsPageState extends State<ChatSessionsPage> {
               itemCount: _chatSessions.length,
               itemBuilder: (context, index) {
                 final sessionId = _chatSessions[index];
-                return ListTile(
-                  title: Text(
-                    'Session ${index + 1}',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onTap: () => _viewChatSession(sessionId),
-                  trailing: Icon(
-                    Icons.arrow_forward,
-                    color: Colors.white,
-                  ),
-                  tileColor: Colors.blueGrey[800],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                return Column(
+                  children: [
+                    ListTile(
+                      title: Text(
+                        'Session ${index + 1}',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      onTap: () => _viewChatSession(sessionId),
+                      trailing: Icon(
+                        Icons.arrow_forward,
+                        color: Colors.white,
+                      ),
+                      tileColor: Colors.blueGrey[800],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    SizedBox(height: 12), // Add space between sessions
+                  ],
                 );
               },
             ),
