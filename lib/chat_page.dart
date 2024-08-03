@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ChatPage extends StatefulWidget {
   final int tokens;
@@ -17,6 +19,7 @@ class _ChatPageState extends State<ChatPage> {
   Timer? _timer;
   int _remainingTime = 0; // in seconds
   int _tokens = 0;
+  String _prevState = ""; // To store the state returned by the API
 
   @override
   void initState() {
@@ -26,6 +29,9 @@ class _ChatPageState extends State<ChatPage> {
         60; // Set total chat time based on tokens (1 token = 60 seconds)
     _loadChatHistory();
     _startTimer();
+
+    // Send the first AI message
+    _sendInitialAIMessage();
   }
 
   Future<void> _loadChatHistory() async {
@@ -62,7 +68,7 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
@@ -73,12 +79,71 @@ class _ChatPageState extends State<ChatPage> {
 
     _saveChatHistory(); // Save chat history after sending message
 
-    Future.delayed(Duration(seconds: 1), () {
+    // Make API request to get bot response
+    await _getBotResponse();
+  }
+
+  Future<void> _getBotResponse() async {
+    final response = await http.post(
+      Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "data": _messages,
+        "prev_state": _prevState,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      final botMessage = responseData['output'];
+      _prevState =
+          responseData['state']; // Update prev_state with the new state
+
       setState(() {
-        _messages.add({'sender': 'ai', 'text': 'AI response to: $text'});
+        _messages.add({'sender': 'ai', 'text': botMessage});
       });
-      _saveChatHistory(); // Save chat history after AI response
-    });
+
+      _saveChatHistory(); // Save chat history after receiving AI response
+    } else {
+      setState(() {
+        _messages.add({
+          'sender': 'ai',
+          'text': 'Sorry, I am having trouble connecting. Please try again.'
+        });
+      });
+    }
+  }
+
+  void _sendInitialAIMessage() async {
+    // Send an initial empty API request to get the first AI message
+    final response = await http.post(
+      Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "data": [],
+        "prev_state": _prevState,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      final botMessage = responseData['output'];
+      _prevState =
+          responseData['state']; // Update prev_state with the new state
+
+      setState(() {
+        _messages.add({'sender': 'ai', 'text': botMessage});
+      });
+
+      _saveChatHistory(); // Save chat history after receiving the initial AI message
+    } else {
+      setState(() {
+        _messages.add({
+          'sender': 'ai',
+          'text': 'Sorry, I am having trouble connecting. Please try again.'
+        });
+      });
+    }
   }
 
   void _showTokenExpiredDialog() {
