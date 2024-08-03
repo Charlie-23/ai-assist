@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:archive/archive.dart';
+import 'package:uuid/uuid.dart';
 
 class ChatPage extends StatefulWidget {
   final int tokens;
+  final String sessionId;
 
-  ChatPage({required this.tokens});
+  ChatPage({required this.tokens, required this.sessionId});
 
   @override
   _ChatPageState createState() => _ChatPageState();
@@ -23,7 +29,41 @@ class _ChatPageState extends State<ChatPage> {
     _tokens = widget.tokens;
     _remainingTime = _tokens *
         60; // Set total chat time based on tokens (1 token = 60 seconds)
+    _loadChatHistory();
     _startTimer();
+  }
+
+  Future<void> _loadChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final compressedData = prefs.getString(widget.sessionId);
+    if (compressedData != null) {
+      final decompressedData = _decompressString(compressedData);
+      final List<dynamic> jsonData = jsonDecode(decompressedData);
+      setState(() {
+        _messages.addAll(jsonData
+            .map((message) => Map<String, String>.from(message))
+            .toList());
+      });
+    }
+  }
+
+  Future<void> _saveChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonData = jsonEncode(_messages);
+    final compressedData = _compressString(jsonData);
+    await prefs.setString(widget.sessionId, compressedData);
+  }
+
+  String _compressString(String data) {
+    List<int> stringBytes = utf8.encode(data);
+    List<int> compressedBytes = GZipEncoder().encode(stringBytes) ?? [];
+    return base64Encode(compressedBytes);
+  }
+
+  String _decompressString(String compressedData) {
+    List<int> compressedBytes = base64Decode(compressedData);
+    List<int> decompressedBytes = GZipDecoder().decodeBytes(compressedBytes);
+    return utf8.decode(decompressedBytes);
   }
 
   void _startTimer() {
@@ -61,10 +101,13 @@ class _ChatPageState extends State<ChatPage> {
       _controller.clear();
     });
 
+    _saveChatHistory(); // Save chat history after sending message
+
     Future.delayed(Duration(seconds: 1), () {
       setState(() {
         _messages.add({'sender': 'ai', 'text': 'AI response to: $text'});
       });
+      _saveChatHistory(); // Save chat history after AI response
     });
   }
 
