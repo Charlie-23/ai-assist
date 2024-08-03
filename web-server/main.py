@@ -1,6 +1,6 @@
 import fastapi
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Optional
 
 app = fastapi.FastAPI()
 
@@ -10,11 +10,12 @@ class SingleConversation(BaseModel):
 
 class FunctionRequest(BaseModel):
     data: List[SingleConversation]
+    prev_state: Optional[str] = None
 
 
 @app.get("/health")
 def health():
-    return {"status": "oks"}
+    return {"status": "ok"}
 
 
 @app.post("/chat")
