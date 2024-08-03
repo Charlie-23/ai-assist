@@ -21,13 +21,19 @@ def health():
 @app.post("/chat")
 def decode(request: FunctionRequest):
     response = "dummy response"
-    return response
+    return {
+        "output": response,
+        "state": "dummy state"
+    }
 
 
 @app.post("/summary")
 def decode(request: FunctionRequest):
     response = "dummy response"
-    return response
+    return {
+        "output": response,
+        "state": "dummy state"
+    }
 
 if __name__ == "__main__":
     import uvicorn
