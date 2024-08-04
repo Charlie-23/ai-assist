@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:archive/archive.dart'; // Import this for GZipDecoder
 
 class ChatPage extends StatefulWidget {
   final int tokens;
@@ -22,6 +21,8 @@ class _ChatPageState extends State<ChatPage> {
   int _remainingTime = 0; // in seconds
   int _tokens = 0;
   String _prevState = ""; // To store the state returned by the API
+  bool _isUserInputEnabled = false; // Control whether user can send a message
+  bool _isTimerPaused = false; // To keep track if the timer is paused
 
   @override
   void initState() {
@@ -30,9 +31,7 @@ class _ChatPageState extends State<ChatPage> {
     _remainingTime = _tokens *
         60; // Set total chat time based on tokens (1 token = 60 seconds)
     _startTimer();
-
-    // Send the first AI message
-    _sendInitialAIMessage();
+    _sendInitialAIMessage(); // Send the first AI message
   }
 
   @override
@@ -48,12 +47,15 @@ class _ChatPageState extends State<ChatPage> {
           timer.cancel();
           _showTokenExpiredDialog();
         } else {
-          if (_remainingTime % 60 == 0) {
-            _reduceToken();
+          if (!_isTimerPaused) {
+            // Only decrement time if timer is not paused
+            if (_remainingTime % 60 == 0) {
+              _reduceToken();
+            }
+            setState(() {
+              _remainingTime--;
+            });
           }
-          setState(() {
-            _remainingTime--;
-          });
         }
       });
     }
@@ -75,6 +77,7 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _messages.add({'sender': 'user', 'text': text});
       _controller.clear();
+      _isUserInputEnabled = false; // Disable user input after sending a message
     });
 
     _saveChatHistory(); // Save chat history after sending message
@@ -84,38 +87,57 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _getBotResponse() async {
-    try {
-      final response = await http.post(
-        Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "data": _messages,
-          "prev_state": _prevState,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        final botMessage = responseData['output'];
-        _prevState =
-            responseData['state']; // Update prev_state with the new state
-
-        setState(() {
-          _messages.add({'sender': 'ai', 'text': botMessage});
-        });
-
-        _saveChatHistory(); // Save chat history after receiving AI response
-      } else {
-        _handleError();
+    // Start a timer that will send the fallback message if the API doesn't respond within 4 seconds
+    bool apiResponded = false;
+    Future.delayed(Duration(seconds: 4)).then((_) {
+      if (!apiResponded) {
+        _handleError(); // Send the fallback message
       }
-    } catch (e) {
-      _handleError();
+    });
+
+    // Convert messages to the required API format
+    final List<Map<String, String>> apiData = _messages.map((message) {
+      if (message['sender'] == 'user') {
+        return {'user_message': message['text']!, 'bot_message': ''};
+      } else {
+        return {'user_message': '', 'bot_message': message['text']!};
+      }
+    }).toList();
+
+    final response = await http.post(
+      Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "data": apiData,
+        "prev_state": _prevState,
+      }),
+    );
+
+    // If the API responds in time, process the response
+    if (response.statusCode == 200) {
+      apiResponded = true; // Mark that the API has responded
+      final responseData = jsonDecode(response.body);
+      final botMessage = responseData['output'];
+      _prevState =
+          responseData['state']; // Update prev_state with the new state
+
+      setState(() {
+        _messages.add({'sender': 'ai', 'text': botMessage});
+        _isUserInputEnabled =
+            true; // Enable user input after receiving AI response
+      });
+
+      _saveChatHistory(); // Save chat history after receiving AI response
     }
   }
 
   void _handleError() {
     setState(() {
-      _messages.add({'sender': 'ai', 'text': 'We will be back soon.'});
+      _messages.add({
+        'sender': 'ai',
+        'text': 'Oops!! Sorry, backend is down. We will be back soon!!'
+      });
+      _isUserInputEnabled = true; // Enable user input even on error
     });
 
     _saveChatHistory(); // Save chat history after receiving the fallback message
@@ -123,6 +145,13 @@ class _ChatPageState extends State<ChatPage> {
 
   void _sendInitialAIMessage() async {
     // Send an initial empty API request to get the first AI message
+    bool apiResponded = false;
+    Future.delayed(Duration(seconds: 4)).then((_) {
+      if (!apiResponded) {
+        _handleError(); // Send the fallback message
+      }
+    });
+
     final response = await http.post(
       Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
       headers: {'Content-Type': 'application/json'},
@@ -133,6 +162,7 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     if (response.statusCode == 200) {
+      apiResponded = true;
       final responseData = jsonDecode(response.body);
       final botMessage = responseData['output'];
       _prevState =
@@ -140,11 +170,11 @@ class _ChatPageState extends State<ChatPage> {
 
       setState(() {
         _messages.add({'sender': 'ai', 'text': botMessage});
+        _isUserInputEnabled =
+            true; // Enable user input after receiving AI response
       });
 
       _saveChatHistory(); // Save chat history after receiving the initial AI message
-    } else {
-      _handleError();
     }
   }
 
@@ -178,15 +208,82 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  void _showTokensPopup() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Tokens Available'),
+          content: Text(
+              'You have $_tokens tokens available. Would you like to add more?'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+                _addMoreTokens();
+              },
+              child: Text('Add Tokens'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _addMoreTokens() {
+    _showMockAd(); // Show a mock ad before adding more tokens
+  }
+
+  Future<void> _showMockAd() async {
+    // Pause the timer
     setState(() {
-      _tokens += 5;
-      _remainingTime += 5 * 60; // Add more time based on added tokens
-      if (_timer == null || !_timer!.isActive) {
-        _startTimer(); // Restart the timer if it was stopped
-      }
-      _saveTokens(); // Save the updated token count
+      _isTimerPaused = true;
     });
+
+    // Simulate watching an ad by showing a dialog with a timer
+    showDialog(
+      context: context,
+      barrierDismissible:
+          false, // Prevent the dialog from being closed prematurely
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Watch Ad to Earn Token'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Watching an ad...'),
+              SizedBox(height: 20),
+              CircularProgressIndicator(),
+            ],
+          ),
+        );
+      },
+    );
+
+    // Simulate a 5-second ad watching time
+    await Future.delayed(Duration(seconds: 5));
+
+    // Close the dialog
+    Navigator.of(context).pop();
+
+    // Increment the token count
+    setState(() {
+      _tokens += 1;
+      _remainingTime += 60; // Add 60 seconds for each token
+      _saveTokens(); // Save the updated token count
+      _isTimerPaused = false; // Resume the timer
+    });
+
+    // Notify the user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('You have earned 1 token!')),
+    );
   }
 
   Future<void> _saveChatHistory() async {
@@ -252,6 +349,12 @@ class _ChatPageState extends State<ChatPage> {
         appBar: AppBar(
           title: Text('Chat'),
           backgroundColor: Colors.blueGrey[900],
+          actions: [
+            IconButton(
+              icon: Icon(Icons.token),
+              onPressed: _showTokensPopup, // Show tokens and option to add more
+            ),
+          ],
         ),
         body: Column(
           children: <Widget>[
@@ -293,8 +396,12 @@ class _ChatPageState extends State<ChatPage> {
                   Expanded(
                     child: TextField(
                       controller: _controller,
+                      enabled:
+                          _isUserInputEnabled, // Enable/Disable based on AI response
                       decoration: InputDecoration(
-                        hintText: 'Type a message...',
+                        hintText: _isUserInputEnabled
+                            ? 'Type a message...'
+                            : 'Waiting for AI response...',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -303,7 +410,9 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                   IconButton(
                     icon: Icon(Icons.send),
-                    onPressed: _sendMessage,
+                    onPressed: _isUserInputEnabled
+                        ? _sendMessage
+                        : null, // Enable/Disable based on AI response
                   ),
                 ],
               ),

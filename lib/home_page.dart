@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart'; // Import Uuid package
-import 'chat_page.dart'; // Import ChatPage
-import 'chat_sessions_page.dart'; // Import ChatSessionsPage
+import 'package:uuid/uuid.dart';
+import 'chat_page.dart';
+import 'chat_sessions_page.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -28,28 +28,60 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _startChat() async {
-    final sessionId = Uuid().v4();
-    final prefs = await SharedPreferences.getInstance();
-    List<String> sessions = prefs.getStringList('chat_sessions') ?? [];
+    if (_tokens <= 0) {
+      _showAddTokensPopup();
+    } else {
+      final sessionId = Uuid().v4();
+      final prefs = await SharedPreferences.getInstance();
+      List<String> sessions = prefs.getStringList('chat_sessions') ?? [];
 
-    // Add the new session
-    sessions.add(sessionId);
-    await prefs.setStringList('chat_sessions', sessions);
+      // Add the new session
+      sessions.add(sessionId);
+      await prefs.setStringList('chat_sessions', sessions);
 
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatPage(tokens: _tokens, sessionId: sessionId),
-      ),
-    );
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatPage(tokens: _tokens, sessionId: sessionId),
+        ),
+      );
 
-    // Update tokens after returning from the chat
-    if (result != null && result is int) {
-      setState(() {
-        _tokens = result;
-        _saveTokens(_tokens); // Save the updated token count
-      });
+      // Update tokens after returning from the chat
+      if (result != null && result is int) {
+        setState(() {
+          _tokens = result;
+          _saveTokens(_tokens); // Save the updated token count
+        });
+      }
     }
+  }
+
+  void _showAddTokensPopup() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Not Enough Tokens'),
+          content: Text(
+              'You need more tokens to start a chat. Would you like to add more tokens?'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _getMoreTokens();
+              },
+              child: Text('Add Tokens'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _saveTokens(int tokens) async {
