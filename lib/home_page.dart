@@ -119,7 +119,7 @@ class _HomePageState extends State<HomePage> {
 
     // Increment the token count
     setState(() {
-      _tokens += 1;
+      _tokens += 3;
     });
 
     // Save the updated token count

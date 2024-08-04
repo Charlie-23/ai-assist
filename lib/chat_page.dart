@@ -98,13 +98,34 @@ class _ChatPageState extends State<ChatPage> {
     });
 
     // Convert messages to the required API format
-    final List<Map<String, String>> apiData = _messages.map((message) {
-      if (message['sender'] == 'user') {
-        return {'user_message': message['text']!, 'bot_message': ''};
-      } else {
-        return {'user_message': '', 'bot_message': message['text']!};
+    // final List<Map<String, String>> apiData = _messages.map((message) {
+    //   if (message['sender'] == 'user') {
+    //     return {'user_message': message['text']!, 'bot_message': ''};
+    //   } else {
+    //     return {'user_message': '', 'bot_message': message['text']!};
+    //   }
+    // }).toList();
+// Convert messages to the required API format
+// Convert messages to the required API format
+    final List<Map<String, String>> apiData = [];
+    String? lastBotMessage;
+
+    for (var message in _messages) {
+      if (message['sender'] == 'ai') {
+        // Store the bot's message to be paired with the next user message
+        lastBotMessage = message['text']!;
+      } else if (message['sender'] == 'user' && lastBotMessage != null) {
+        // Pair the bot's message with the user response
+        apiData.add({
+          'bot_message': lastBotMessage,
+          'user_message': message['text']!,
+        });
+        lastBotMessage = null; // Reset for the next pair
       }
-    }).toList();
+    }
+
+    // Print the apiData for debugging
+    print('API Data: $apiData');
 
     final response = await http.post(
       Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
