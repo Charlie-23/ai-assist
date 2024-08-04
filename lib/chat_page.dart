@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:archive/archive.dart'; // Import this for GZipDecoder
 
 class ChatPage extends StatefulWidget {
   final int tokens;
@@ -27,19 +29,16 @@ class _ChatPageState extends State<ChatPage> {
     _tokens = widget.tokens;
     _remainingTime = _tokens *
         60; // Set total chat time based on tokens (1 token = 60 seconds)
-    _loadChatHistory();
     _startTimer();
 
     // Send the first AI message
     _sendInitialAIMessage();
   }
 
-  Future<void> _loadChatHistory() async {
-    // Loading previous chat session logic...
-  }
-
-  Future<void> _saveChatHistory() async {
-    // Saving chat session logic...
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   void _startTimer() {
@@ -64,6 +63,7 @@ class _ChatPageState extends State<ChatPage> {
     if (_tokens > 0) {
       setState(() {
         _tokens--; // Reduce one token each minute
+        _saveTokens(); // Save updated token count
       });
     }
   }
@@ -84,34 +84,41 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _getBotResponse() async {
-    final response = await http.post(
-      Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        "data": _messages,
-        "prev_state": _prevState,
-      }),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "data": _messages,
+          "prev_state": _prevState,
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      final responseData = jsonDecode(response.body);
-      final botMessage = responseData['output'];
-      _prevState =
-          responseData['state']; // Update prev_state with the new state
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final botMessage = responseData['output'];
+        _prevState =
+            responseData['state']; // Update prev_state with the new state
 
-      setState(() {
-        _messages.add({'sender': 'ai', 'text': botMessage});
-      });
-
-      _saveChatHistory(); // Save chat history after receiving AI response
-    } else {
-      setState(() {
-        _messages.add({
-          'sender': 'ai',
-          'text': 'Sorry, I am having trouble connecting. Please try again.'
+        setState(() {
+          _messages.add({'sender': 'ai', 'text': botMessage});
         });
-      });
+
+        _saveChatHistory(); // Save chat history after receiving AI response
+      } else {
+        _handleError();
+      }
+    } catch (e) {
+      _handleError();
     }
+  }
+
+  void _handleError() {
+    setState(() {
+      _messages.add({'sender': 'ai', 'text': 'We will be back soon.'});
+    });
+
+    _saveChatHistory(); // Save chat history after receiving the fallback message
   }
 
   void _sendInitialAIMessage() async {
@@ -137,12 +144,7 @@ class _ChatPageState extends State<ChatPage> {
 
       _saveChatHistory(); // Save chat history after receiving the initial AI message
     } else {
-      setState(() {
-        _messages.add({
-          'sender': 'ai',
-          'text': 'Sorry, I am having trouble connecting. Please try again.'
-        });
-      });
+      _handleError();
     }
   }
 
@@ -183,11 +185,36 @@ class _ChatPageState extends State<ChatPage> {
       if (_timer == null || !_timer!.isActive) {
         _startTimer(); // Restart the timer if it was stopped
       }
+      _saveTokens(); // Save the updated token count
     });
   }
 
+  Future<void> _saveChatHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String sessionKey = 'session_${widget.sessionId}';
+      final List<String> chatHistory = _messages.map((message) {
+        return jsonEncode(message);
+      }).toList();
+      await prefs.setStringList(sessionKey, chatHistory);
+      print('Chat history saved successfully.');
+    } catch (e) {
+      print('Failed to save chat history: $e');
+    }
+  }
+
+  Future<void> _saveTokens() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('tokens', _tokens);
+      print('Tokens saved successfully.');
+    } catch (e) {
+      print('Failed to save tokens: $e');
+    }
+  }
+
   Future<bool> _onWillPop() async {
-    return await showDialog(
+    bool exit = await showDialog(
           context: context,
           builder: (context) => AlertDialog(
             title: Text('Are you sure?'),
@@ -206,6 +233,15 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ) ??
         false;
+
+    if (exit) {
+      await _saveChatHistory(); // Save chat history before exiting
+      await _saveTokens(); // Save tokens before exiting
+      Navigator.pop(
+          context, _tokens); // Return the token count to the previous screen
+    }
+
+    return exit;
   }
 
   @override
@@ -290,11 +326,5 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 }

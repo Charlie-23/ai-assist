@@ -1,90 +1,100 @@
 import 'package:flutter/material.dart';
-import 'chat_history_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'chat_history_page.dart'; // Make sure to import ChatHistoryPage
 
-class ChatSessionsPage extends StatefulWidget {
-  @override
-  _ChatSessionsPageState createState() => _ChatSessionsPageState();
-}
-
-class _ChatSessionsPageState extends State<ChatSessionsPage> {
-  List<String> _chatSessions = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadChatSessions();
+class ChatSessionsPage extends StatelessWidget {
+  Future<List<String>> _loadChatSessions() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList('chat_sessions') ?? [];
   }
 
-  Future<void> _loadChatSessions() async {
+  Future<void> _clearAllChatSessions(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-    List<String> sessions = prefs.getStringList('chat_sessions') ?? [];
+    await prefs.remove('chat_sessions');
 
-    // Keep only the most recent 5 sessions
-    if (sessions.length > 5) {
-      sessions = sessions.sublist(sessions.length - 5);
-      await prefs.setStringList(
-          'chat_sessions', sessions); // Save the trimmed list back
+    // Optionally, remove all individual session data as well
+    // You might need to remove each session's data if stored separately
+    final allKeys = prefs.getKeys();
+    for (String key in allKeys) {
+      if (key.startsWith('session_')) {
+        await prefs.remove(key);
+      }
     }
 
-    setState(() {
-      _chatSessions = sessions;
-    });
-  }
-
-  void _viewChatSession(String sessionId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatHistoryPage(sessionId: sessionId),
-      ),
+    // Refresh the UI after clearing the chats
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('All chats cleared successfully')),
     );
+    Navigator.pop(
+        context); // Go back to the previous page or refresh the current page
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Up to 5 Recent Sessions'),
+        title: Text('Chat History'),
         backgroundColor: Colors.blueGrey[900],
-      ),
-      body: _chatSessions.isEmpty
-          ? Center(
-              child: Text(
-                'No previous chat sessions found.',
-                style: TextStyle(color: Colors.white, fontSize: 18),
-              ),
-            )
-          : ListView.builder(
-              padding: EdgeInsets.all(8),
-              itemCount: _chatSessions.length,
-              itemBuilder: (context, index) {
-                final sessionId = _chatSessions[index];
-                return Column(
-                  children: [
-                    ListTile(
-                      title: Text(
-                        'Session ${index + 1}',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      onTap: () => _viewChatSession(sessionId),
-                      trailing: Icon(
-                        Icons.arrow_forward,
-                        color: Colors.white,
-                      ),
-                      tileColor: Colors.blueGrey[800],
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.delete_forever),
+            onPressed: () async {
+              bool confirm = await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Clear All Chats'),
+                  content:
+                      Text('Are you sure you want to clear all chat sessions?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text('Cancel'),
                     ),
-                    SizedBox(height: 12), // Add space between sessions
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text('Clear All'),
+                    ),
                   ],
+                ),
+              );
+              if (confirm) {
+                await _clearAllChatSessions(context);
+              }
+            },
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<String>>(
+        future: _loadChatSessions(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error loading chat sessions.'));
+          } else if (snapshot.data!.isEmpty) {
+            return Center(child: Text('No chat history available.'));
+          } else {
+            final sessions = snapshot.data!;
+            return ListView.builder(
+              itemCount: sessions.length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  title: Text('Session ${index + 1}'),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            ChatHistoryPage(sessionId: sessions[index]),
+                      ),
+                    );
+                  },
                 );
               },
-            ),
-      backgroundColor: Colors.black87,
+            );
+          }
+        },
+      ),
     );
   }
 }

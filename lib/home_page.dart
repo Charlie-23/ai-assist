@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'chat_page.dart';
-import 'chat_sessions_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
+import 'package:uuid/uuid.dart'; // Import Uuid package
+import 'chat_page.dart'; // Import ChatPage
+import 'chat_sessions_page.dart'; // Import ChatSessionsPage
 
 class HomePage extends StatefulWidget {
   @override
@@ -24,60 +24,7 @@ class _HomePageState extends State<HomePage> {
       _tokens = prefs.getInt('tokens') ??
           5; // Load tokens, defaulting to 5 if not found
     });
-  }
-
-  Future<void> _saveTokens(int tokens) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('tokens', tokens); // Save tokens to shared_preferences
-  }
-
-  Future<void> _showMockAd() async {
-    // Simulate an ad experience with a simple dialog
-    return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Watch this ad to earn 1 token'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Simulate an ad with a progress indicator
-              Container(
-                height: 150,
-                color: Colors.grey[300],
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Ad Placeholder'),
-                      SizedBox(height: 20),
-                      CircularProgressIndicator(),
-                    ],
-                  ),
-                ),
-              ),
-              SizedBox(height: 20),
-              Text('Please wait...'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                setState(() {
-                  _tokens += 1; // Reward the user with one token
-                  _saveTokens(_tokens);
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('You earned 1 token!')),
-                );
-              },
-              child: Text('Close Ad'),
-            ),
-          ],
-        );
-      },
-    );
+    print("Loaded tokens: $_tokens");
   }
 
   Future<void> _startChat() async {
@@ -85,11 +32,8 @@ class _HomePageState extends State<HomePage> {
     final prefs = await SharedPreferences.getInstance();
     List<String> sessions = prefs.getStringList('chat_sessions') ?? [];
 
-    // Add the new session and keep only the most recent 5
+    // Add the new session
     sessions.add(sessionId);
-    if (sessions.length > 5) {
-      sessions = sessions.sublist(sessions.length - 5);
-    }
     await prefs.setStringList('chat_sessions', sessions);
 
     final result = await Navigator.push(
@@ -99,7 +43,7 @@ class _HomePageState extends State<HomePage> {
       ),
     );
 
-    // Update the tokens if a result is returned from the ChatPage
+    // Update tokens after returning from the chat
     if (result != null && result is int) {
       setState(() {
         _tokens = result;
@@ -108,8 +52,51 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _getMoreTokens() {
-    _showMockAd(); // Show the mock ad dialog
+  Future<void> _saveTokens(int tokens) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('tokens', tokens);
+    print("Saved tokens: $tokens");
+  }
+
+  Future<void> _getMoreTokens() async {
+    // Simulate watching an ad by showing a dialog with a timer
+    showDialog(
+      context: context,
+      barrierDismissible:
+          false, // Prevent the dialog from being closed prematurely
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Watch Ad to Earn Token'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Watching an ad...'),
+              SizedBox(height: 20),
+              CircularProgressIndicator(),
+            ],
+          ),
+        );
+      },
+    );
+
+    // Simulate a 5-second ad watching time
+    await Future.delayed(Duration(seconds: 5));
+
+    // Close the dialog
+    Navigator.of(context).pop();
+
+    // Increment the token count
+    setState(() {
+      _tokens += 1;
+    });
+
+    // Save the updated token count
+    await _saveTokens(_tokens);
+
+    // Notify the user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('You have earned 1 token!')),
+    );
   }
 
   void _viewChatSessions() {
@@ -148,7 +135,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
                   Text(
-                    'Welcome to the Techy App!',
+                    'Welcome to the AI Assist!',
                     style: Theme.of(context).textTheme.headline4?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
