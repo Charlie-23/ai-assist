@@ -23,7 +23,7 @@ class _ChatPageState extends State<ChatPage> {
   String _prevState = ""; // To store the state returned by the API
   bool _isUserInputEnabled = false; // Control whether user can send a message
   bool _isTimerPaused = false; // To keep track if the timer is paused
-
+  bool _isTimerExpired = false; // To track if the timer has expired
   @override
   void initState() {
     super.initState();
@@ -42,9 +42,11 @@ class _ChatPageState extends State<ChatPage> {
 
   void _startTimer() {
     if (_tokens > 0) {
+      _isTimerExpired = false; // Reset the expired flag
       _timer = Timer.periodic(Duration(seconds: 1), (timer) {
         if (_remainingTime <= 0) {
           timer.cancel();
+          _isTimerExpired = true; // Reset the expired flag
           _showTokenExpiredDialog();
         } else {
           if (!_isTimerPaused) {
@@ -145,37 +147,17 @@ class _ChatPageState extends State<ChatPage> {
 
   void _sendInitialAIMessage() async {
     // Send an initial empty API request to get the first AI message
-    bool apiResponded = false;
-    Future.delayed(Duration(seconds: 4)).then((_) {
-      if (!apiResponded) {
-        _handleError(); // Send the fallback message
-      }
+
+    final botMessage =
+        'Namaste, Welcome to your personal counselor. Aapki Samasya bataye.';
+
+    setState(() {
+      _messages.add({'sender': 'ai', 'text': botMessage});
+      _isUserInputEnabled =
+          true; // Enable user input after receiving AI response
     });
 
-    final response = await http.post(
-      Uri.parse('http://fellow-nicolea-counselor-ee37a316.koyeb.app/chat'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        "data": [],
-        "prev_state": _prevState,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      apiResponded = true;
-      final responseData = jsonDecode(response.body);
-      final botMessage = responseData['output'];
-      _prevState =
-          responseData['state']; // Update prev_state with the new state
-
-      setState(() {
-        _messages.add({'sender': 'ai', 'text': botMessage});
-        _isUserInputEnabled =
-            true; // Enable user input after receiving AI response
-      });
-
-      _saveChatHistory(); // Save chat history after receiving the initial AI message
-    }
+    _saveChatHistory(); // Save chat history after receiving the initial AI message
   }
 
   void _showTokenExpiredDialog() {
@@ -279,7 +261,10 @@ class _ChatPageState extends State<ChatPage> {
       _saveTokens(); // Save the updated token count
       _isTimerPaused = false; // Resume the timer
     });
-
+    // Restart the timer if it was expired
+    if (_isTimerExpired) {
+      _startTimer();
+    }
     // Notify the user
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('You have earned 1 token!')),
